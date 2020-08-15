@@ -1,6 +1,7 @@
 // Data source hosted on https://cloud.mongodb.com
 // Joda JS Library https://js-joda.github.io/js-joda/manual/LocalDate.html 
 // Running Node on Windows: https://github.com/coreybutler/node-windows
+// 
 
 
 console.log("Hello world")
@@ -51,6 +52,7 @@ mongoose.connect(url,{
         jaminCollection.insertOne(req.body).then(result => {
             console.log('Logged activity: ')
             console.log(req.body)
+            res.send();
         }).catch(error => {
             console.log(error)
         })
