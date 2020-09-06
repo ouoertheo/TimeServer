@@ -1,17 +1,19 @@
-// Data source hosted on https://cloud.mongodb.com
 // Joda JS Library https://js-joda.github.io/js-joda/manual/LocalDate.html 
 // Running Node on Windows: https://github.com/coreybutler/node-windows
-// 
 
+const bodyParser = require('body-parser')
+const express = require('express')
+const mongoose = require('mongoose')
+const config = require('./config')
+const app = express()
 
-console.log("Hello world")
-const bodyParser = require('body-parser');
-const express = require('express');
-const mongoose = require('mongoose');
-const config = require('./config');
-const app = express();
+// // Models
+// const activity = require('./models/activity')
+// const activity = require('./models/day')
+// const activity = require('./models/session')
+// const activity = require('./models/user')
 
-const url = config.mongo_url;
+const url = config.mongo_url
 
 mongoose.connect(url,{
     useNewUrlParser: true,
@@ -29,22 +31,53 @@ mongoose.connect(url,{
     })
 
     app.get("/test",(req,res) => {
-        res.sendFile(__dirname+'/index.html')
+        res.send("Yep")
     })
 
-    app.get("/getToday/:name/:date",(req,res) => {
+    app.get("/getToday/:name",(req,res) => {
         var name = req.params.name
-        console.log(name);
+
+        var today = new Date().toISOString().slice(0, 10)
+        todayQueryString = '^'+today
+
+        var match = {user: name, timestamp: RegExp(todayQueryString)}
+        var group = {_id: '$user', total: {$sum: '$usage'}}
+        var pipeline = [{$match: match}, {$group: group}]
+        
+        console.log(pipeline)
+        jaminCollection.aggregate(pipeline).toArray().then(results =>{
+            total = {total: results[0]['total']}
+            console.log(total)
+            res.send(total)
+        }
+        ).catch(err =>{
+            res.send(err)
+        })
+    })
+
+    app.get("/debugGetToday/:name",(req,res) => {
+        var name = req.params.name
+        var today = new Date().toISOString().slice(0, 10)
+        todayQueryString = '^'+today
+        var query = {user: name, timestamp: RegExp(todayQueryString)}
+        //var query = {user: name}
+        console.log(query)
+        jaminCollection.find(query).toArray().then(results =>{
+                res.send(results)
+            }
+        ).catch(err =>{
+            res.send(err)
+        })
     })
 
     app.post('/clearAll',(req,res) => {
         jaminCollection.deleteMany({}).then( result =>{
-            console.log('Deleted: ' + result.deletedCount + " items.");
+            console.log('Deleted: ' + result.deletedCount + " items.")
             res.send('Deleted: ' + result.deletedCount + " items.")
         }).catch(error => {
             console.log(error)
             res.send(error)
-        });
+        })
     })
 
     app.post('/poll', (req,res) => {
@@ -52,7 +85,7 @@ mongoose.connect(url,{
         jaminCollection.insertOne(req.body).then(result => {
             console.log('Logged activity: ')
             console.log(req.body)
-            res.send();
+            res.send()
         }).catch(error => {
             console.log(error)
         })
