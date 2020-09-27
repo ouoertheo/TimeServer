@@ -5,13 +5,14 @@ const bodyParser = require('body-parser')
 const express = require('express')
 const mongoose = require('mongoose')
 const config = require('./config')
+const { update } = require('./models/activity')
 const app = express()
 
-// // Models
-// const activity = require('./models/activity')
-// const activity = require('./models/day')
-// const activity = require('./models/session')
-// const activity = require('./models/user')
+// Models
+const activity = require('./models/activity')
+const day = require('./models/day')
+const session = require('./models/session')
+const user = require('./models/user')
 
 const url = config.mongo_url
 
@@ -21,7 +22,7 @@ mongoose.connect(url,{
 }).then(client => {
     console.log('Connected to Database')
     const db = mongoose.connection
-    const jaminCollection = db.collection('jamin')
+    const collection = db.collection('jamin')
 
     app.use(bodyParser.urlencoded({extended:true}))
     app.use(bodyParser.json())
@@ -46,7 +47,7 @@ mongoose.connect(url,{
         var pipeline = [{$match: match}, {$group: group}]
         
         console.log(pipeline)
-        jaminCollection.aggregate(pipeline).toArray().then(results =>{
+        collection.aggregate(pipeline).toArray().then(results =>{
             total = {total: results[0]['total']}
             console.log(total)
             res.send(total)
@@ -56,14 +57,14 @@ mongoose.connect(url,{
         })
     })
 
-    app.get("/getTopdayDebug/:name",(req,res) => {
+    app.get("/getTodayDebug/:name",(req,res) => {
         var name = req.params.name
         var today = new Date().toISOString().slice(0, 10)
         todayQueryString = '^'+today
         var query = {user: name, timestamp: RegExp(todayQueryString)}
         //var query = {user: name}
         console.log(query)
-        jaminCollection.find(query).toArray().then(results =>{
+        collection.find(query).toArray().then(results =>{
                 res.send(results)
             }
         ).catch(err =>{
@@ -84,7 +85,7 @@ mongoose.connect(url,{
         var pipeline = [{$match: match}, {$group: group}]
         
         console.log(pipeline)
-        jaminCollection.aggregate(pipeline).toArray().then(results =>{
+        collection.aggregate(pipeline).toArray().then(results =>{
             total = {total: results[0]['total']}
             console.log(total)
             res.send(total)
@@ -106,7 +107,7 @@ mongoose.connect(url,{
         var query = {user: name, timestamp: RegExp(todayQueryString)}
         //var query = {user: name}
         console.log(query)
-        jaminCollection.find(query).toArray().then(results =>{
+        collection.find(query).toArray().then(results =>{
                 res.send(results)
             }
         ).catch(err =>{
@@ -116,7 +117,7 @@ mongoose.connect(url,{
     })
 
     app.post('/clearAll',(req,res) => {
-        jaminCollection.deleteMany({}).then( result =>{
+        collection.deleteMany({}).then( result =>{
             console.log('Deleted: ' + result.deletedCount + " items.")
             res.send('Deleted: ' + result.deletedCount + " items.")
         }).catch(error => {
@@ -127,7 +128,7 @@ mongoose.connect(url,{
 
     app.post('/poll', (req,res) => {
         console.log("Received request. Submitting to Mongo")
-        jaminCollection.insertOne(req.body).then(result => {
+        collection.insertOne(req.body).then(result => {
             console.log('Logged activity: ')
             console.log(req.body)
             res.send()
@@ -137,11 +138,150 @@ mongoose.connect(url,{
     })
 
     
-    app.post('/scoreWebHook',(req,res) => {
+    app.post('/scoreWebHookOld',(req,res) => {
         res.send("Hooked!")
         console.log("Hooked!")
-        console.log(req.body)
+        // console.log(req.body)
+        let taskType = req.body.task.type
+        let taskName = req.body.task.text
+        if (taskType === "reward"){
+            console.log("Received reward " + taskName)
+        }
     })
+
+    // Create a user
+    app.post('/user', (req,res) => {
+        let thisUser = new user({
+            name: req.body.name,
+            dailyLimit: req.body.dailyLimit,
+            bonusLimit: req.body.bonusLimit,
+            devices: req.body.devices,
+            habiticaId: req.body.habiticaId       
+        })
+        
+        thisUser.save().then(doc => {
+            res.status(201).send(doc)
+        }).catch(err => {
+            res.status(500).send(err.message)
+        })
+    })
+
+    // Update a user
+    app.patch('/user/:name', (req,res) =>{
+        console.log(req.params.name)
+
+        user.findOne({name: req.params.name}).then(doc => {
+            console.debug("Retrieved user: " + req.params.name)
+            console.debug(doc)
+
+            if (req.body.dailyLimit) {
+                doc.dailyLimit = req.body.dailyLimit
+            }
+            if (req.body.bonusLimit){
+                doc.bonusLimit = req.body.bonusLimit
+            }
+            if (req.body.habiticaId){
+                doc.habiticaId = req.body.habiticaId
+            }
+            if (req.body.devices){
+                doc.devices = req.body.devices
+            }
+    
+            user.updateOne(doc).then(() => {
+                console.debug("Updated user: " + req.params.name)
+                console.debug(doc)
+                res.status(201).send(doc)
+            }).catch(err => {
+                res.status(500).send("Error updating: " + err.message)
+            })
+        }).catch(err => {
+            res.status(500).send("Error retrieving: " + err.message)
+        })
+    })
+
+
+
+    
+    // Get a user
+    app.get('/user/:name', (req,res) => {
+        user.findOne({name: req.params.name}).then(doc => {
+            if (doc){
+                res.status(200).send(doc)
+            } else {
+                res.status(404).send("User not found")
+            }
+        }).catch(err => {
+            res.status(500).send("Error retrieving: " + err.message)
+        })
+    })
+
+    // List all users
+    app.get('/user',(req,res) => {
+        user.find().then(doc => {
+            if (doc){
+                res.status(200).send(doc)
+            } else {
+                res.status(404).send("No users found")
+            }
+        }).catch(err => {
+            res.status(500).send("Error retrieving: " + err.message)
+        })
+    })
+
+    // Delete a user
+    app.delete('/user/:name',(req,res) => {
+        console.log(req.params.name)
+
+        user.findOne({name: req.params.name}).then(doc => {
+            console.debug("Retrieved user: " + req.params.name)
+            console.debug(doc)
+    
+            doc.remove().then(() => {
+                console.debug("Deleted user: " + req.params.name)
+                console.debug(doc)
+                res.status(201).send(doc)
+            }).catch(err => {
+                res.status(500).send("Error deleting: " + err.message)
+            })
+        }).catch(err => {
+            res.status(500).send("Error retrieving: " + err.message)
+        })
+    })
+
+    app.post('/scoreWebHook', (req,res) => {
+        res.status(200).send("Hooked!")
+        let reqHabiticaId = req.body.task.userId
+        console.debug(reqHabiticaId)
+        let taskType = req.body.task.type
+        let taskName = req.body.task.text
+        if (taskType === "reward" && taskName == "1 hour of screen time"){
+            console.log("Increasing bonus time ")
+
+            user.findOne({habiticaId: reqHabiticaId}).then(doc => {
+                console.debug("Retrieved user: " + doc.name)
+                console.debug(doc)
+
+                if (doc.bonusLimit){
+                    doc.bonusLimit = doc.bonusLimit + 3600000
+                }
+        
+                user.updateOne(doc).then(() => {
+                    console.debug("Updated user: " + doc.name)
+                    console.debug(doc)
+                    //res.status(201).send(doc)
+                }).catch(err => {
+                    console.error("Error updating: " + err.message)
+                    //res.status(500).send("Error updating: " + err.message)
+                })
+            }).catch(err => {
+                console.error("Error updating: " + err.message)
+                //res.status(500).send("Error retrieving: " + err.message)
+            })
+        }
+    })
+
+    // Todo: create daily job to clear all user daily limits
+
 
 }).catch(error => console.error(error))
 
