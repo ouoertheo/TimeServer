@@ -17,8 +17,14 @@ const user = new Schema({
     },
     devices: [
         {
-            name: String,
-            user: String,
+            device: {
+                type: String,
+                required: true
+            },
+            user: {
+                type: String,
+                required: true
+            },
             limit: Number
         }
     ],

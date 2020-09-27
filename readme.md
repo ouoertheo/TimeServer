@@ -19,8 +19,8 @@ Prerequisites: Node.JS, node-windows (install global)
 * POST `/user/:name` - Create a new user
 * PATCH `/user/:name` - Modify a user. 
 * DELETE `/user/:name` - Remove a user
-* 
-
+* POST `/user/:name/devices` - Add a device to a user
+* DELETE `/user/:name/devices` - Remove a device from a user
 
 
 User model:

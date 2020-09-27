@@ -35,24 +35,46 @@ mongoose.connect(url,{
         res.send("Yep")
     })
 
+    
     app.get("/getToday/:name",(req,res) => {
         var name = req.params.name
 
+        // Get the user object associated with the current host
+        findUserQuery = user.findOne({"devices.user" : name})
+
+        // Get all
         var today = new Date().toISOString().slice(0, 10)
-        console.log(today)
         todayQueryString = '^'+today
 
         var match = {user: name, timestamp: RegExp(todayQueryString)}
-        var group = {_id: '$user', total: {$sum: '$usage'}}
+        var group = {_id: '$user', used: {$sum: '$usage'}}
         var pipeline = [{$match: match}, {$group: group}]
         
-        console.log(pipeline)
-        collection.aggregate(pipeline).toArray().then(results =>{
-            total = {total: results[0]['total']}
-            console.log(total)
+        // console.debug (pipeline)
+        aggregateQuery = collection.aggregate(pipeline).toArray()
+
+        // Wait for user        
+        Promise.all([findUserQuery,aggregateQuery]).then(values => {
+            // Get the total used time
+            usedTime = values[1][0]['used']
+
+            // Get the total alotted time. This might not be populeted if the user is not registered,
+            // if not, then we change the response logic to simply return how much time is spent, rather than left.
+            if (values[0]){
+                let totalLimit = values[0].dailyLimit + values[0].bonusLimit
+                console.debug("Device is associated with user, sending time left")
+                console.debug("Queried: " + name + " | Response: " + values[0].name + " | Time used\\total: " + usedTime + "\\" + totalLimit)
+                // Get the difference
+                total = {state: "time left", total: totalLimit-usedTime}
+            } else {
+                // Or just send current time total
+                console.debug("Device is not associated with a user, sending time used")
+                total = {state: "time used", total: usedTime}
+            }
+
+            console.info(total)
             res.send(total)
-        }
-        ).catch(err =>{
+        }).catch(err =>{
             res.send(err)
         })
     })
@@ -278,6 +300,14 @@ mongoose.connect(url,{
                 //res.status(500).send("Error retrieving: " + err.message)
             })
         }
+    })
+
+    app.post('user/:name/devices', (req,res) => {
+        req.send("Not implemented")
+    })
+
+    app.delete('user/:name/devices', (req,res) => {
+        req.send("Not implemented")        
     })
 
     // Todo: create daily job to clear all user daily limits
