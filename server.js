@@ -38,6 +38,7 @@ mongoose.connect(url,{
         var name = req.params.name
 
         var today = new Date().toISOString().slice(0, 10)
+        console.log(today)
         todayQueryString = '^'+today
 
         var match = {user: name, timestamp: RegExp(todayQueryString)}
@@ -55,7 +56,7 @@ mongoose.connect(url,{
         })
     })
 
-    app.get("/debugGetToday/:name",(req,res) => {
+    app.get("/getTopdayDebug/:name",(req,res) => {
         var name = req.params.name
         var today = new Date().toISOString().slice(0, 10)
         todayQueryString = '^'+today
@@ -68,6 +69,50 @@ mongoose.connect(url,{
         ).catch(err =>{
             res.send(err)
         })
+    })
+
+    // Call should look like /getDate/username?date=Y-mm-dd
+    app.get("/getDate/:name",(req,res) => {
+        var name = req.params.name
+        var date = req.query.date
+        let total
+        console.log(date)
+        todayQueryString = '^'+date
+
+        var match = {user: name, timestamp: RegExp(todayQueryString)}
+        var group = {_id: '$user', total: {$sum: '$usage'}}
+        var pipeline = [{$match: match}, {$group: group}]
+        
+        console.log(pipeline)
+        jaminCollection.aggregate(pipeline).toArray().then(results =>{
+            total = {total: results[0]['total']}
+            console.log(total)
+            res.send(total)
+        }
+        ).catch(err =>{
+            res.send(err)
+        })
+        
+    })
+
+    // Call should look like /getDate/username?date=Y-mm-dd
+    app.get("/getDateDebug/:name",(req,res) => {
+        var name = req.params.name
+        var date = req.query.date
+        let total
+        console.log(date)
+        todayQueryString = '^'+date
+
+        var query = {user: name, timestamp: RegExp(todayQueryString)}
+        //var query = {user: name}
+        console.log(query)
+        jaminCollection.find(query).toArray().then(results =>{
+                res.send(results)
+            }
+        ).catch(err =>{
+            res.send(err)
+        })
+        
     })
 
     app.post('/clearAll',(req,res) => {
@@ -90,5 +135,13 @@ mongoose.connect(url,{
             console.log(error)
         })
     })
+
+    
+    app.post('/scoreWebHook',(req,res) => {
+        res.send("Hooked!")
+        console.log("Hooked!")
+        console.log(req.body)
+    })
+
 }).catch(error => console.error(error))
 
