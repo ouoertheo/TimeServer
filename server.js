@@ -183,17 +183,6 @@ mongoose.connect(url,{
         })
     })
 
-    
-    app.post('/scoreWebHookOld',(req,res) => {
-        res.send("Hooked!")
-        console.log("Hooked!")
-        // console.log(req.body)
-        let taskType = req.body.task.type
-        let taskName = req.body.task.text
-        if (taskType === "reward"){
-            console.log("Received reward " + taskName)
-        }
-    })
 
     // Create a user
     app.post('/user', (req,res) => {
@@ -220,10 +209,10 @@ mongoose.connect(url,{
             console.debug("Retrieved user: " + req.params.name)
             console.debug(doc)
 
-            if (req.body.dailyLimit) {
+            if (req.body.dailyLimit || req.body.dailyLimit === 0 ) {
                 doc.dailyLimit = req.body.dailyLimit
             }
-            if (req.body.bonusLimit){
+            if (req.body.bonusLimit || req.body.bonusLimit === 0 ){
                 doc.bonusLimit = req.body.bonusLimit
             }
             if (req.body.habiticaId){
