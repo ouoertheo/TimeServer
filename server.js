@@ -309,7 +309,7 @@ mongoose.connect(url,{
 
                 doc.bonusLimit = doc.bonusLimit + 3600000
         
-                user.updateOne(doc).then(() => {
+                doc.save().then(doc => {
                     console.debug("Updated user: " + doc.name)
                     console.debug(doc)
                     //res.status(201).send(doc)
