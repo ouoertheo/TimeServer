@@ -1,12 +1,15 @@
 // Joda JS Library https://js-joda.github.io/js-joda/manual/LocalDate.html 
 // Running Node on Windows: https://github.com/coreybutler/node-windows
 
+const cron = require('node-cron')
 const bodyParser = require('body-parser')
 const express = require('express')
 const mongoose = require('mongoose')
 const config = require('./config')
 const { update } = require('./models/activity')
 const app = express()
+
+
 
 // Models
 const activity = require('./models/activity')
@@ -27,6 +30,18 @@ mongoose.connect(url,{
     app.use(bodyParser.urlencoded({extended:true}))
     app.use(bodyParser.json())
 
+    cron.schedule('0 21 * * *', function() {
+        console.info('wiping bonusLimits for the day');
+        user.updateMany({bonusLimit:{$gt:0}},{bonusLimit:0}, (err, docs) => {
+            if (err){
+                console.info("Failed to clear user bonusLimits")
+            } else {
+                console.info("Updated bonusLimits")
+                console.info(docs)
+            }
+        } )
+    });
+
     app.listen(3000,function(){
         console.log("Listening on port 3000")
     })
@@ -35,16 +50,25 @@ mongoose.connect(url,{
         res.send("Yep")
     })
 
-    
+    // Because no ISO to locale, so copy paste from stackExchange. But of course.
+    function dateToISOLikeButLocal(date) {
+        const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+        const msLocal =  date.getTime() - offsetMs;
+        const dateLocal = new Date(msLocal);
+        const iso = dateLocal.toISOString();
+        const isoLocal = iso.slice(0, 10);
+        return isoLocal;
+    }
+
     app.get("/getToday/:name",(req,res) => {
         var name = req.params.name
 
         // Get the user object associated with the current host
         findUserQuery = user.findOne({"devices.user" : name})
 
-        // Get all
-        var today = new Date().toISOString().slice(0, 10)
-        todayQueryString = '^'+today
+        // Get all the activities from today for that user
+        var today = new Date()
+        todayQueryString = '^' + dateToISOLikeButLocal(today)
 
         var match = {user: name, timestamp: RegExp(todayQueryString)}
         var group = {_id: '$user', used: {$sum: '$usage'}}
@@ -53,7 +77,7 @@ mongoose.connect(url,{
         // console.debug (pipeline)
         aggregateQuery = collection.aggregate(pipeline).toArray()
 
-        // Wait for user        
+        // Wait for user
         Promise.all([findUserQuery,aggregateQuery]).then(values => {
             // Get the total used time
             usedTime = values[1][0]['used']
@@ -283,9 +307,7 @@ mongoose.connect(url,{
                 console.debug("Retrieved user: " + doc.name)
                 console.debug(doc)
 
-                if (doc.bonusLimit){
-                    doc.bonusLimit = doc.bonusLimit + 3600000
-                }
+                doc.bonusLimit = doc.bonusLimit + 3600000
         
                 user.updateOne(doc).then(() => {
                     console.debug("Updated user: " + doc.name)
@@ -311,6 +333,7 @@ mongoose.connect(url,{
     })
 
     // Todo: create daily job to clear all user daily limits
+
 
 
 }).catch(error => console.error(error))
