@@ -233,7 +233,7 @@ mongoose.connect(url,{
                 doc.devices = req.body.devices
             }
     
-            user.updateOne(doc).then(() => {
+            doc.save().then(doc => {
                 console.debug("Updated user: " + req.params.name)
                 console.debug(doc)
                 res.status(201).send(doc)
