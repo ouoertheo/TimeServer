@@ -13,8 +13,20 @@ const user = new Schema({
         required: true
     },
     bonusLimit: {
-        type: Number,
+        type: Number
     },
+    break: {
+        duration: Number,
+        freeTime: Number,
+        last: Number,
+        onBreak: Boolean
+    },
+    downTime: [
+        {
+            start: Number,
+            end: Number
+        }
+    ],
     devices: [
         {
             device: {

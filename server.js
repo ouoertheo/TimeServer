@@ -16,6 +16,7 @@ const activity = require('./models/activity')
 const day = require('./models/day')
 const session = require('./models/session')
 const user = require('./models/user')
+const { DateTimeException } = require('js-joda')
 
 const url = config.mongo_url
 
@@ -30,6 +31,7 @@ mongoose.connect(url,{
     app.use(bodyParser.urlencoded({extended:true}))
     app.use(bodyParser.json())
 
+    // Clear daily limit at 9PM every night
     cron.schedule('0 21 * * *', function() {
         console.info('wiping bonusLimits for the day');
         user.updateMany({bonusLimit:{$gt:0}},{bonusLimit:0}, (err, docs) => {
@@ -40,7 +42,26 @@ mongoose.connect(url,{
                 console.info(docs)
             }
         } )
+        // Reset onBreak
+        user.updateMany({onBreak: true},{onBreak: false}, (err, docs) => {
+            if (err){
+                console.info("Failed to update onBreak")
+            } else {
+                console.info("Updated onBreak")
+                console.info(docs)
+            }
+        } )
+        // Reset break.last
+        user.updateMany({last:{$gt:0}},{last: 0}, (err, docs) => {
+            if (err){
+                console.info("Failed to update onBreak")
+            } else {
+                console.info("Updated onBreak")
+                console.info(docs)
+            }
+        } )
     });
+
 
     app.listen(3000,function(){
         console.log("Listening on port 3000")
@@ -48,6 +69,37 @@ mongoose.connect(url,{
 
     app.get("/test",(req,res) => {
         res.send("Yep")
+    })
+
+    app.post("/resetDailyStates",(req,res) => {
+        console.info('wiping bonusLimits for the day');
+        user.updateMany({bonusLimit:{$gt:0}},{bonusLimit:0}, (err, docs) => {
+            if (err){
+                console.info("Failed to clear user bonusLimits")
+            } else {
+                console.info("Updated bonusLimits")
+                console.info(docs)
+            }
+        } )
+        // Reset onBreak
+        user.updateMany({onBreak: true},{onBreak: false}, (err, docs) => {
+            if (err){
+                console.info("Failed to update break.onBreak")
+            } else {
+                console.info("Updated break.onBreak")
+                console.info(docs)
+            }
+        } )
+        // Reset break.last
+        user.updateMany({last:{$gt:0}},{last: 0}, (err, docs) => {
+            if (err){
+                console.info("Failed to update break.last")
+            } else {
+                console.info("Updated break.last")
+                console.info(docs)
+            }
+        } )
+        res.status(202).send("Reset daily states")
     })
 
     // Because no ISO to locale, so copy paste from stackExchange. But of course.
@@ -60,36 +112,89 @@ mongoose.connect(url,{
         return isoLocal;
     }
 
+    // Return total time for today
     app.get("/getToday/:name",(req,res) => {
         var name = req.params.name
-
-        // Get the user object associated with the current host
+        //
+        // Get the user object associated with the current host. 
+        //
         findUserQuery = user.findOne({"devices.user" : name})
 
+        //
         // Get all the activities from today for that user
+        //
         var today = new Date()
         todayQueryString = '^' + dateToISOLikeButLocal(today)
 
         var match = {user: name, timestamp: RegExp(todayQueryString)}
         var group = {_id: '$user', used: {$sum: '$usage'}}
         var pipeline = [{$match: match}, {$group: group}]
-        
-        // console.debug (pipeline)
+        // Make the call. 
         aggregateQuery = collection.aggregate(pipeline).toArray()
 
-        // Wait for user
-        Promise.all([findUserQuery,aggregateQuery]).then(values => {
+        // Wait for user and aggregate total. 
+        Promise.all([findUserQuery,aggregateQuery]).then(values => {            
             // Get the total used time
             usedTime = values[1][0]['used']
 
+            //
             // Get the total alotted time. This might not be populeted if the user is not registered,
             // if not, then we change the response logic to simply return how much time is spent, rather than left.
+            //
+
+            // User Exists
             if (values[0]){
+                thisUser = values[0]
                 let totalLimit = values[0].dailyLimit + values[0].bonusLimit
+
                 console.debug("Device is associated with user, sending time left")
                 console.debug("Queried: " + name + " | Response: " + values[0].name + " | Time used\\total: " + usedTime + "\\" + totalLimit)
-                // Get the difference
-                total = {state: "time left", total: totalLimit-usedTime}
+
+                //
+                // Handle breaks
+                //
+                if(thisUser.break.freeTime && thisUser.break.duration){
+                    total = {state: "time left", total: totalLimit-usedTime}
+
+                    // Next break is the last break timestamp + duration + freeTime
+                    nextBreak = thisUser.break.last + thisUser.break.freeTime  + thisUser.break.duration
+
+                    // Next free time is after the last break start and the freeTime
+                    nextFreeTime = thisUser.break.last + thisUser.break.duration
+
+                    onBreak = thisUser.break.onBreak
+                    
+                    console.debug("Break: now: " + Date.now() + " | nextBreak: " + nextBreak + " | nextFreeTime: " + nextFreeTime + " | onBreak: " + onBreak )
+
+                    // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
+                    if (thisUser.break.last === 0){
+                        if (usedTime > thisUser.break.freeTime){
+                            thisUser.break.last = Date.now()
+                            onBreak = true
+                        } 
+
+                    // Handle returning from break. Currently on break.
+                    } else if (Date.now() > nextFreeTime && onBreak === true){
+                        onBreak = false
+
+                    // Handle going on break after initial break. Currently on free time.
+                    } else if (Date.now() > nextBreak && onBreak === false){
+                        thisUser.break.last = Date.now()
+                        onBreak = true
+                    }
+                    
+                    if (onBreak){
+                        // total = 0
+                    }
+
+                    thisUser.break.onBreak = onBreak
+                    thisUser.save()                    
+
+                } else {
+                    console.info("No break configured")
+                }
+
+            // User does not exist
             } else {
                 // Or just send current time total
                 console.debug("Device is not associated with a user, sending time used")
@@ -118,6 +223,7 @@ mongoose.connect(url,{
         })
     })
 
+    // Get total time for specific date
     // Call should look like /getDate/username?date=Y-mm-dd
     app.get("/getDate/:name",(req,res) => {
         var name = req.params.name
@@ -142,6 +248,7 @@ mongoose.connect(url,{
         
     })
 
+    // Get poll information for a user on a specific day
     // Call should look like /getDate/username?date=Y-mm-dd
     app.get("/getDateDebug/:name",(req,res) => {
         var name = req.params.name
@@ -162,6 +269,7 @@ mongoose.connect(url,{
         
     })
 
+    // Clear all polling data
     app.post('/clearAll',(req,res) => {
         collection.deleteMany({}).then( result =>{
             console.log('Deleted: ' + result.deletedCount + " items.")
@@ -172,6 +280,7 @@ mongoose.connect(url,{
         })
     })
 
+    // Accept a poll from a client
     app.post('/poll', (req,res) => {
         console.log("Received request. Submitting to Mongo")
         collection.insertOne(req.body).then(result => {
@@ -190,6 +299,7 @@ mongoose.connect(url,{
             name: req.body.name,
             dailyLimit: req.body.dailyLimit,
             bonusLimit: req.body.bonusLimit,
+            break: req.body.break,
             devices: req.body.devices,
             habiticaId: req.body.habiticaId       
         })
@@ -220,6 +330,9 @@ mongoose.connect(url,{
             }
             if (req.body.devices){
                 doc.devices = req.body.devices
+            }
+            if (req.body.break){
+                doc.break = req.body.break
             }
     
             doc.save().then(doc => {
@@ -320,10 +433,6 @@ mongoose.connect(url,{
     app.delete('user/:name/devices', (req,res) => {
         req.send("Not implemented")        
     })
-
-    // Todo: create daily job to clear all user daily limits
-
-
 
 }).catch(error => console.error(error))
 
