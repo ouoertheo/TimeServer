@@ -16,9 +16,10 @@ const user = new Schema({
         type: Number
     },
     break: {
-        duration: Number,
-        freeTime: Number,
-        last: Number,
+        breakDuration: Number,
+        freeDuration: Number,
+        lastBreakDuration: Number,
+        lastBreakTime: Number,
         onBreak: Boolean
     },
     downTime: [

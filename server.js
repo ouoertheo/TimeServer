@@ -17,6 +17,7 @@ const day = require('./models/day')
 const session = require('./models/session')
 const user = require('./models/user')
 const { DateTimeException } = require('js-joda')
+const { response } = require('express')
 
 const url = config.mongo_url
 
@@ -52,11 +53,11 @@ mongoose.connect(url,{
             }
         } )
         // Reset break.last
-        user.updateMany({last:{$gt:0}},{last: 0}, (err, docs) => {
+        user.updateMany({lastBreakDuration:{$gt:0}},{lastBreakDuration: 0, lastBreakTime: 0}, (err, docs) => {
             if (err){
-                console.info("Failed to update onBreak")
+                console.info("Failed to update lastBreak*")
             } else {
-                console.info("Updated onBreak")
+                console.info("Updated lastBreak*")
                 console.info(docs)
             }
         } )
@@ -137,15 +138,29 @@ mongoose.connect(url,{
             // Get the total used time
             usedTime = values[1][0]['used']
 
+            // Set initial response to client
+            responseJson = {
+                state: "N/A", 
+                total: 0, 
+                nextBreak: -1, 
+                nextFreeTime: -1,
+                breakTimeLeft: -1,
+                freeTimeLeft: -1,
+                onBreak: false
+            }
+
             //
             // Get the total alotted time. This might not be populeted if the user is not registered,
             // if not, then we change the response logic to simply return how much time is spent, rather than left.
+            // Oh yeah, also added break logic here. 
             //
 
             // User Exists
             if (values[0]){
+                responseJson.state = "time left"
                 thisUser = values[0]
-                let totalLimit = values[0].dailyLimit + values[0].bonusLimit
+                let totalLimit = thisUser.dailyLimit + thisUser.bonusLimit
+                responseJson.total = totalLimit - usedTime
 
                 console.debug("Device is associated with user, sending time left")
                 console.debug("Queried: " + name + " | Response: " + values[0].name + " | Time used\\total: " + usedTime + "\\" + totalLimit)
@@ -153,33 +168,45 @@ mongoose.connect(url,{
                 //
                 // Handle breaks
                 //
-                if(thisUser.break.freeTime && thisUser.break.duration){
-                    total = {state: "time left", total: totalLimit-usedTime}
+                if(thisUser.break.freeDuration && thisUser.break.breakDuration){
 
-                    // Next break is the last break timestamp + duration + freeTime
-                    nextBreak = thisUser.break.last + thisUser.break.freeTime  + thisUser.break.duration
+                    // Next break is the last break duration + break duration + free duration
+                    nextBreak = thisUser.break.lastBreakDuration + thisUser.break.freeDuration  + thisUser.break.breakDuration
 
-                    // Next free time is after the last break start and the freeTime
-                    nextFreeTime = thisUser.break.last + thisUser.break.duration
+                    // Next free time is after the timestamp + break duration
+                    nextFreeTime = thisUser.break.lastBreakTime + thisUser.break.breakDuration
 
                     onBreak = thisUser.break.onBreak
+                    console.debug("lastBreakDuration: " + thisUser.break.lastBreakDuration + " lastBreakTime: " + thisUser.break.lastBreakTime + " now: " + Date.now())
+                    console.debug("Time until break is up: " + (nextFreeTime - Date.now()))
                     
-                    console.debug("Break: now: " + Date.now() + " | nextBreak: " + nextBreak + " | nextFreeTime: " + nextFreeTime + " | onBreak: " + onBreak )
+                    // Update response to client
+                    responseJson.nextBreak = nextBreak
+                    responseJson.nextFreeTime = nextFreeTime
+                    responseJson.onBreak = onBreak
+                    responseJson.breakTimeLeft = Math.max(nextFreeTime - Date.now(), 0)
+                    responseJson.freeTimeLeft = Math.min(nextBreak - usedTime, thisUser.break.freeDuration)
+
 
                     // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
-                    if (thisUser.break.last === 0){
-                        if (usedTime > thisUser.break.freeTime){
-                            thisUser.break.last = Date.now()
+                    if (thisUser.break.lastBreakDuration === 0 && thisUser.break.lastBreakTime){
+                        if (usedTime > thisUser.break.freeDuration){
+                            console.debug("-------Initial Break Time---------")
+                            thisUser.break.lastBreakDuration = usedTime
+                            thisUser.break.lastBreakTime = Date.now()
                             onBreak = true
                         } 
 
                     // Handle returning from break. Currently on break.
-                    } else if (Date.now() > nextFreeTime && onBreak === true){
+                    } else if (Date.now() >= nextFreeTime && onBreak === true){
                         onBreak = false
+                        console.debug("-------Start Free Time---------")
 
                     // Handle going on break after initial break. Currently on free time.
-                    } else if (Date.now() > nextBreak && onBreak === false){
-                        thisUser.break.last = Date.now()
+                    } else if (usedTime >= nextBreak && onBreak === false){
+                        console.debug("-------Start Break Time---------")
+                        thisUser.break.lastBreakDuration = usedTime
+                        thisUser.break.lastBreakTime = Date.now()
                         onBreak = true
                     }
                     
@@ -198,11 +225,11 @@ mongoose.connect(url,{
             } else {
                 // Or just send current time total
                 console.debug("Device is not associated with a user, sending time used")
-                total = {state: "time used", total: usedTime}
+                responseJson.state = "time used"
             }
 
-            console.info(total)
-            res.send(total)
+            console.info(responseJson)
+            res.send(responseJson)
         }).catch(err =>{
             res.send(err)
         })
@@ -332,12 +359,28 @@ mongoose.connect(url,{
                 doc.devices = req.body.devices
             }
             if (req.body.break){
-                doc.break = req.body.break
+                if (req.body.break.breakDuration || req.body.break.breakDuration === 0){
+                    doc.break.breakDuration = req.body.break.breakDuration
+                }
+                if (req.body.break.freeDuration || req.body.break.freeDuration === 0){
+                    doc.break.freeDuration = req.body.break.freeDuration
+                }
+                if (req.body.break.onBreak || req.body.break.onBreak === false){
+                    doc.break.onBreak = req.body.break.onBreak                    
+                }
+                if (req.body.break.lastBreakDuration || req.body.break.lastBreakDuration === 0){
+                    doc.break.lastBreakDuration = req.body.break.lastBreakDuration
+                }
+                if (req.body.break.lastBreakTime || req.body.break.lastBreakTime === 0){
+                    doc.break.lastBreakTime = req.body.break.lastBreakTime
+                }
             }
     
             doc.save().then(doc => {
                 console.debug("Updated user: " + req.params.name)
                 console.debug(doc)
+
+                // convert reponse to minutes
                 res.status(201).send(doc)
             }).catch(err => {
                 res.status(500).send("Error updating: " + err.message)
@@ -433,6 +476,7 @@ mongoose.connect(url,{
     app.delete('user/:name/devices', (req,res) => {
         req.send("Not implemented")        
     })
+
 
 }).catch(error => console.error(error))
 
