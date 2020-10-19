@@ -211,7 +211,7 @@ mongoose.connect(url,{
                     }
                     
                     if (onBreak){
-                        // total = 0
+                        responseJson.total = 0
                     }
 
                     thisUser.break.onBreak = onBreak
