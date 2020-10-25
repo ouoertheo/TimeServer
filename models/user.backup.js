@@ -3,7 +3,7 @@
         "break": {
             "breakDuration": 1800000,
             "freeDuration": 5400000,
-            "lastBreakDuration": 0,
+            "lastFreeDuration": 0,
             "lastBreakTime": 0,
             "onBreak": false
         },
@@ -24,7 +24,7 @@
         "break": {
             "breakDuration": 1800000,
             "freeDuration": 5400000,
-            "lastBreakDuration": 0,
+            "lastFreeDuration": 0,
             "lastBreakTime": 0,
             "onBreak": false
         },
@@ -46,7 +46,7 @@
             "breakDuration": 120000,
             "freeDuration": 120000,
             "onBreak": true,
-            "lastBreakDuration": 0,
+            "lastFreeDuration": 0,
             "lastBreakTime": 0,
             "onBreak": false
         },

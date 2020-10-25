@@ -43,21 +43,12 @@ mongoose.connect(url,{
                 console.info(docs)
             }
         } )
-        // Reset onBreak
-        user.updateMany({onBreak: true},{onBreak: false}, (err, docs) => {
+        // Reset breaks
+        user.updateMany({$set: {'break.lastBreakDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
             if (err){
-                console.info("Failed to update onBreak")
+                console.info("Failed to update breaks")
             } else {
-                console.info("Updated onBreak")
-                console.info(docs)
-            }
-        } )
-        // Reset break.last
-        user.updateMany({lastBreakDuration:{$gt:0}},{lastBreakDuration: 0, lastBreakTime: 0}, (err, docs) => {
-            if (err){
-                console.info("Failed to update lastBreak*")
-            } else {
-                console.info("Updated lastBreak*")
+                console.info("Updated breaks")
                 console.info(docs)
             }
         } )
@@ -82,21 +73,12 @@ mongoose.connect(url,{
                 console.info(docs)
             }
         } )
-        // Reset onBreak
-        user.updateMany({onBreak: true},{onBreak: false}, (err, docs) => {
+        // Reset breaks
+        user.updateMany({$set: {'break.lastBreakDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
             if (err){
-                console.info("Failed to update break.onBreak")
+                console.info("Failed to update breaks")
             } else {
-                console.info("Updated break.onBreak")
-                console.info(docs)
-            }
-        } )
-        // Reset break.last
-        user.updateMany({last:{$gt:0}},{last: 0}, (err, docs) => {
-            if (err){
-                console.info("Failed to update break.last")
-            } else {
-                console.info("Updated break.last")
+                console.info("Updated breaks")
                 console.info(docs)
             }
         } )
@@ -171,41 +153,32 @@ mongoose.connect(url,{
                 if(thisUser.break.freeDuration && thisUser.break.breakDuration){
 
                     // Next break is the last break duration + break duration + free duration
-                    nextBreak = thisUser.break.lastBreakDuration + thisUser.break.freeDuration  + thisUser.break.breakDuration
+                    nextBreak = thisUser.break.lastFreeDuration + thisUser.break.freeDuration
 
                     // Next free time is after the timestamp + break duration
                     nextFreeTime = thisUser.break.lastBreakTime + thisUser.break.breakDuration
 
                     onBreak = thisUser.break.onBreak
-                    console.debug("lastBreakDuration: " + thisUser.break.lastBreakDuration + " lastBreakTime: " + thisUser.break.lastBreakTime + " now: " + Date.now())
-                    console.debug("Time until break is up: " + (nextFreeTime - Date.now()))
                     
-                    // Update response to client
-                    responseJson.nextBreak = nextBreak
-                    responseJson.nextFreeTime = nextFreeTime
-                    responseJson.onBreak = onBreak
-                    responseJson.breakTimeLeft = Math.max(nextFreeTime - Date.now(), 0)
-                    responseJson.freeTimeLeft = Math.min(nextBreak - usedTime, thisUser.break.freeDuration)
 
 
                     // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
-                    if (thisUser.break.lastBreakDuration === 0 && thisUser.break.lastBreakTime){
+                    if (thisUser.break.lastFreeDuration === 0 && thisUser.break.lastBreakTime == 0){
                         if (usedTime > thisUser.break.freeDuration){
                             console.debug("-------Initial Break Time---------")
-                            thisUser.break.lastBreakDuration = usedTime
                             thisUser.break.lastBreakTime = Date.now()
                             onBreak = true
                         } 
 
-                    // Handle returning from break. Currently on break.
+                    // Start free time. Handle returning from break. Currently on break.
                     } else if (Date.now() >= nextFreeTime && onBreak === true){
-                        onBreak = false
                         console.debug("-------Start Free Time---------")
+                        thisUser.break.lastFreeDuration = usedTime
+                        onBreak = false
 
-                    // Handle going on break after initial break. Currently on free time.
+                    // Start break. Handle going on break after initial break. Currently on free time.
                     } else if (usedTime >= nextBreak && onBreak === false){
                         console.debug("-------Start Break Time---------")
-                        thisUser.break.lastBreakDuration = usedTime
                         thisUser.break.lastBreakTime = Date.now()
                         onBreak = true
                     }
@@ -213,6 +186,18 @@ mongoose.connect(url,{
                     if (onBreak){
                         responseJson.total = 0
                     }
+
+
+                    // Update response to client
+                    responseJson.nextBreak = nextBreak
+                    responseJson.nextFreeTime = nextFreeTime
+                    responseJson.onBreak = onBreak
+                    responseJson.breakTimeLeft = Math.max(nextFreeTime - Date.now(), 0)
+                    responseJson.freeTimeLeft = Math.max(nextBreak - usedTime, 0)
+
+                    
+                    console.debug("lastFreeDuration: " + thisUser.break.lastFreeDuration + " lastBreakTime: " + thisUser.break.lastBreakTime + " now: " + Date.now())
+                    console.debug("Time until break is up: " + (nextFreeTime - Date.now()))
 
                     thisUser.break.onBreak = onBreak
                     thisUser.save()                    
