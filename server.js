@@ -44,7 +44,7 @@ mongoose.connect(url,{
             }
         } )
         // Reset breaks
-        user.updateMany({$set: {'break.lastBreakDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
+        user.updateMany({$set: {'break.lastFreeDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
             if (err){
                 console.info("Failed to update breaks")
             } else {
@@ -74,7 +74,7 @@ mongoose.connect(url,{
             }
         } )
         // Reset breaks
-        user.updateMany({$set: {'break.lastBreakDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
+        user.updateMany({$set: {'break.lastFreeDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
             if (err){
                 console.info("Failed to update breaks")
             } else {
@@ -152,16 +152,11 @@ mongoose.connect(url,{
                 //
                 if(thisUser.break.freeDuration && thisUser.break.breakDuration){
 
-                    // Next break is the last break duration + break duration + free duration
                     nextBreak = thisUser.break.lastFreeDuration + thisUser.break.freeDuration
-
-                    // Next free time is after the timestamp + break duration
                     nextFreeTime = thisUser.break.lastBreakTime + thisUser.break.breakDuration
 
                     onBreak = thisUser.break.onBreak
                     
-
-
                     // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
                     if (thisUser.break.lastFreeDuration === 0 && thisUser.break.lastBreakTime == 0){
                         if (usedTime > thisUser.break.freeDuration){
