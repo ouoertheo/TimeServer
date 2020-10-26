@@ -1,4 +1,4 @@
-# TimeServer
+# TomeScreenServer
 
 Simple server to track my kid's screen time. 
 
