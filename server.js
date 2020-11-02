@@ -1,23 +1,25 @@
 // Joda JS Library https://js-joda.github.io/js-joda/manual/LocalDate.html 
 // Running Node on Windows: https://github.com/coreybutler/node-windows
 
+
+// Node
 const cron = require('node-cron')
-const bodyParser = require('body-parser')
-const express = require('express')
 const mongoose = require('mongoose')
-const config = require('./config')
-const { update } = require('./models/activity')
+
+// Express
+const express = require('express')
 const app = express()
-
-
+const bodyParser = require('body-parser')
 
 // Models
 const activity = require('./models/activity')
 const day = require('./models/day')
 const session = require('./models/session')
 const user = require('./models/user')
-const { DateTimeException } = require('js-joda')
-const { response } = require('express')
+
+// Internal
+const config = require('./config')
+const service = require('./service')
 
 const url = config.mongo_url
 
@@ -64,26 +66,19 @@ mongoose.connect(url,{
     })
 
     app.post("/resetDailyStates",(req,res) => {
-        console.info('wiping bonusLimits for the day');
-        user.updateMany({bonusLimit:{$gt:0}},{bonusLimit:0}, (err, docs) => {
+        user.updateMany({$set: {'break.lastFreeDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false,'bonusLimit':0}}, (err, docs) => {
             if (err){
-                console.info("Failed to clear user bonusLimits")
-            } else {
-                console.info("Updated bonusLimits")
-                console.info(docs)
-            }
-        } )
-        // Reset breaks
-        user.updateMany({$set: {'break.lastFreeDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false}}, (err, docs) => {
-            if (err){
-                console.info("Failed to update breaks")
+                console.info("Failed to update breaks: " + err)
             } else {
                 console.info("Updated breaks")
                 console.info(docs)
             }
-        } )
+        })
         res.status(202).send("Reset daily states")
     })
+
+    
+
 
     // Because no ISO to locale, so copy paste from stackExchange. But of course.
     function dateToISOLikeButLocal(date) {
@@ -112,11 +107,20 @@ mongoose.connect(url,{
         var match = {user: name, timestamp: RegExp(todayQueryString)}
         var group = {_id: '$user', used: {$sum: '$usage'}}
         var pipeline = [{$match: match}, {$group: group}]
+        
+        startOfDay = new Date(new Date().setHours(0,0,0,0))
+        endOfDay = new Date(new Date().setHours(23,59,59,999))
+
+
+        var match = {user: name, timestamp: {'$gte': startOfDay, '$lte':endOfDay}}
+        var group = {_id: '$user', used: {$sum: '$usage'}}
+        var pipeline2 = [{$match: match}, {$group: group}]
         // Make the call. 
         aggregateQuery = collection.aggregate(pipeline).toArray()
+        aggregateQueryNew = activity.aggregate(pipeline2)
 
         // Wait for user and aggregate total. 
-        Promise.all([findUserQuery,aggregateQuery]).then(values => {            
+        Promise.all([findUserQuery,aggregateQueryNew]).then(values => {            
             // Get the total used time
             usedTime = values[1][0]['used']
 
@@ -180,6 +184,8 @@ mongoose.connect(url,{
                     
                     if (onBreak){
                         responseJson.total = 0
+                    } else {
+
                     }
 
 
@@ -229,6 +235,38 @@ mongoose.connect(url,{
             res.send(err)
         })
     })
+
+
+    app.get('/totalOverTime',(req,res) => {
+        name = req.params.name
+        start = req.params.start
+        end = req.params.end
+        getTotalOverTime(name,start,end).then(doc => {            
+            es.statusCode(200).send(doc)
+        }).catch(err => {
+
+        })
+
+    })
+
+    // Returns the total time used between start and stop timestamps
+    function getTotalOverTime(name, start, end){
+        
+        var match = {user: name, timestamp: {gt: RegExp(start), lt: RegExp(end)}}
+        var group = {_id: '$user', total: {$sum: '$usage'}}
+        var pipeline = [{$match: match}, {$group: group}]
+
+        collection.aggregate(pipeline).toArray().then(results =>{
+            total = {total: results[0]['total']}
+            console.log(total)
+            res.send(total)
+        }
+        ).catch(err =>{
+            res.send(err)
+        })
+    }
+
+
 
     // Get total time for specific date
     // Call should look like /getDate/username?date=Y-mm-dd
@@ -290,9 +328,11 @@ mongoose.connect(url,{
     // Accept a poll from a client
     app.post('/poll', (req,res) => {
         console.log("Received request. Submitting to Mongo")
-        collection.insertOne(req.body).then(result => {
-            console.log('Logged activity: ')
-            console.log(req.body)
+        this_activity = new activity(req.body)
+        console.log(this_activity)
+        this_activity.save().then(() => {
+            //console.log('Logged activity: ')
+            // console.log(req.body)
             res.send()
         }).catch(error => {
             console.log(error)
