@@ -101,13 +101,6 @@ mongoose.connect(url,{
         //
         // Get all the activities from today for that user
         //
-        var today = new Date()
-        todayQueryString = '^' + dateToISOLikeButLocal(today)
-
-        var match = {user: name, timestamp: RegExp(todayQueryString)}
-        var group = {_id: '$user', used: {$sum: '$usage'}}
-        var pipeline = [{$match: match}, {$group: group}]
-        
         startOfDay = new Date(new Date().setHours(0,0,0,0))
         endOfDay = new Date(new Date().setHours(23,59,59,999))
 
@@ -115,8 +108,8 @@ mongoose.connect(url,{
         var match = {user: name, timestamp: {'$gte': startOfDay, '$lte':endOfDay}}
         var group = {_id: '$user', used: {$sum: '$usage'}}
         var pipeline2 = [{$match: match}, {$group: group}]
+
         // Make the call. 
-        aggregateQuery = collection.aggregate(pipeline).toArray()
         aggregateQueryNew = activity.aggregate(pipeline2)
 
         // Wait for user and aggregate total. 
