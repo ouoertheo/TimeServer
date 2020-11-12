@@ -136,10 +136,11 @@ mongoose.connect(url,{
 
             // User Exists
             if (values[0]){
-                responseJson.state = "time left"
                 thisUser = values[0]
+
                 let totalLimit = thisUser.dailyLimit + thisUser.bonusLimit
                 responseJson.total = totalLimit - usedTime
+                responseJson.state = "time left"
 
                 console.debug("Device is associated with user, sending time left")
                 console.debug("Queried: " + name + " | Response: " + values[0].name + " | Time used\\total: " + usedTime + "\\" + totalLimit)
@@ -153,48 +154,66 @@ mongoose.connect(url,{
                     nextFreeTime = thisUser.break.lastBreakTime + thisUser.break.breakDuration
 
                     onBreak = thisUser.break.onBreak
+
+                    // Did the user take a natural break?
+
+                    // Set period start/stop from whatever
+                    playCycle = thisUser.break.breakDuration + thisUser.break.freeDuration
+                    playCycleStart = new Date(new Date().getTime() - (playCycle))
+                    playCycleEnd = new Date()
                     
-                    // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
-                    if (thisUser.break.lastFreeDuration === 0 && thisUser.break.lastBreakTime == 0){
-                        if (usedTime > thisUser.break.freeDuration){
-                            console.debug("-------Initial Break Time---------")
+                    var match = {user: name, timestamp: {"$gte": playCycleStart, '$lte': playCycleEnd}}
+                    var group = {_id: '$user', total: {$sum: '$usage'}}
+                    var pipeline = [{$match: match}, {$group: group}]
+            
+                    activity.aggregate(pipeline).then( agg => {
+                        playTimeInCycle = agg[0].total
+                        naturalBreakTimeInCycle = playCycle - playTimeInCycle
+
+                        console.debug("playCycle: " + playCycle + " playTimeInCycle: " + playTimeInCycle + " naturalBreakTimeInCycle: " + naturalBreakTimeInCycle)
+                    
+                        // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
+                        if (thisUser.break.lastFreeDuration === 0 && thisUser.break.lastBreakTime == 0){
+                            if (playTimeInCycle > thisUser.break.freeDuration){
+                                console.debug("-------Initial Break Time---------")
+                                thisUser.break.lastBreakTime = Date.now()
+                                onBreak = true
+                            }
+
+                        // Start free time. Handle returning from break. Currently on break.
+                        } else if (Date.now() >= (nextFreeTime - naturalBreakTimeInCycle) && onBreak === true){
+                            console.debug("-------Start Free Time---------")
+                            thisUser.break.lastFreeDuration = usedTime
+                            onBreak = false
+
+                        // Start break. Handle going on break after initial break. Currently on free time.
+                        } else if (playTimeInCycle >= thisUser.break.freeDuration && onBreak === false){
+                            console.debug("-------Start Break Time---------")
                             thisUser.break.lastBreakTime = Date.now()
                             onBreak = true
-                        } 
+                        }
+                        
+                        if (onBreak){
+                            responseJson.total = 0
+                            console.debug("Time until break is up: " + (nextFreeTime - Date.now()))
+                        }
+                        
+                        // Update response to client
+                        responseJson.nextBreak = nextBreak
+                        responseJson.nextFreeTime = nextFreeTime
+                        responseJson.onBreak = onBreak
+                        responseJson.breakTimeLeft = Math.max(nextFreeTime - Date.now(), 0)
+                        responseJson.freeTimeLeft = Math.max(nextBreak - usedTime, 0)
 
-                    // Start free time. Handle returning from break. Currently on break.
-                    } else if (Date.now() >= nextFreeTime && onBreak === true){
-                        console.debug("-------Start Free Time---------")
-                        thisUser.break.lastFreeDuration = usedTime
-                        onBreak = false
+                        
+                        console.debug("lastFreeDuration: " + thisUser.break.lastFreeDuration + " lastBreakTime: " + thisUser.break.lastBreakTime + " now: " + Date.now())
 
-                    // Start break. Handle going on break after initial break. Currently on free time.
-                    } else if (usedTime >= nextBreak && onBreak === false){
-                        console.debug("-------Start Break Time---------")
-                        thisUser.break.lastBreakTime = Date.now()
-                        onBreak = true
-                    }
-                    
-                    if (onBreak){
-                        responseJson.total = 0
-                    } else {
+                        thisUser.break.onBreak = onBreak
+                        thisUser.save()
 
-                    }
-
-
-                    // Update response to client
-                    responseJson.nextBreak = nextBreak
-                    responseJson.nextFreeTime = nextFreeTime
-                    responseJson.onBreak = onBreak
-                    responseJson.breakTimeLeft = Math.max(nextFreeTime - Date.now(), 0)
-                    responseJson.freeTimeLeft = Math.max(nextBreak - usedTime, 0)
-
-                    
-                    console.debug("lastFreeDuration: " + thisUser.break.lastFreeDuration + " lastBreakTime: " + thisUser.break.lastBreakTime + " now: " + Date.now())
-                    console.debug("Time until break is up: " + (nextFreeTime - Date.now()))
-
-                    thisUser.break.onBreak = onBreak
-                    thisUser.save()                    
+                    }).catch((err) => {
+                        console.error(err)
+                    })
 
                 } else {
                     console.info("No break configured")
@@ -231,10 +250,10 @@ mongoose.connect(url,{
 
 
     app.get('/totalOverTime',(req,res) => {
-        name = req.params.name
-        start = req.params.start
-        end = req.params.end
-        getTotalOverTime(name,start,end).then(doc => {            
+        _name = req.params.name
+        start = new Date(req.params.start)
+        end = new Date(req.params.end)
+        getTotalOverTime(_name,start,end).then(doc => {            
             es.statusCode(200).send(doc)
         }).catch(err => {
 
@@ -243,20 +262,12 @@ mongoose.connect(url,{
     })
 
     // Returns the total time used between start and stop timestamps
-    function getTotalOverTime(name, start, end){
-        
-        var match = {user: name, timestamp: {gt: RegExp(start), lt: RegExp(end)}}
+    function getTotalOverTime(_name, start, end){        
+        var match = {user: _name, timestamp: {gt: start, lt: end}}
         var group = {_id: '$user', total: {$sum: '$usage'}}
         var pipeline = [{$match: match}, {$group: group}]
 
-        collection.aggregate(pipeline).toArray().then(results =>{
-            total = {total: results[0]['total']}
-            console.log(total)
-            res.send(total)
-        }
-        ).catch(err =>{
-            res.send(err)
-        })
+        return activity.aggregate(pipeline)
     }
 
 
