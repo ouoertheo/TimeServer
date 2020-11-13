@@ -150,15 +150,13 @@ mongoose.connect(url,{
                 //
                 if(thisUser.break.freeDuration && thisUser.break.breakDuration){
 
-                    nextBreak = thisUser.break.lastFreeDuration + thisUser.break.freeDuration
-                    nextFreeTime = thisUser.break.lastBreakTime + thisUser.break.breakDuration
 
                     onBreak = thisUser.break.onBreak
 
                     // Did the user take a natural break?
 
                     // Set period start/stop from whatever
-                    playCycle = thisUser.break.breakDuration + thisUser.break.freeDuration
+                    playCycle = thisUser.break.freeDuration
                     playCycleStart = new Date(new Date().getTime() - (playCycle))
                     playCycleEnd = new Date()
                     
@@ -170,10 +168,13 @@ mongoose.connect(url,{
                         playTimeInCycle = agg[0].total
                         naturalBreakTimeInCycle = playCycle - playTimeInCycle
 
+                        nextBreak = thisUser.break.lastFreeDuration + thisUser.break.freeDuration
+                        nextFreeTime = thisUser.break.lastBreakTime + thisUser.break.breakDuration
+
                         console.debug("playCycle: " + playCycle + " playTimeInCycle: " + playTimeInCycle + " naturalBreakTimeInCycle: " + naturalBreakTimeInCycle)
                     
                         // First Break of the day, we expect break.last to be blank from the scheduled job. Ignores value of onBreak
-                        if (thisUser.break.lastFreeDuration === 0 && thisUser.break.lastBreakTime == 0){
+                        if (usedTime === 0 && thisUser.break.lastBreakTime == 0){
                             if (playTimeInCycle > thisUser.break.freeDuration){
                                 console.debug("-------Initial Break Time---------")
                                 thisUser.break.lastBreakTime = Date.now()
@@ -181,13 +182,13 @@ mongoose.connect(url,{
                             }
 
                         // Start free time. Handle returning from break. Currently on break.
-                        } else if (Date.now() >= (nextFreeTime - naturalBreakTimeInCycle) && onBreak === true){
+                        } else if (Date.now() >= nextFreeTime && onBreak === true){
                             console.debug("-------Start Free Time---------")
                             thisUser.break.lastFreeDuration = usedTime
                             onBreak = false
 
                         // Start break. Handle going on break after initial break. Currently on free time.
-                        } else if (playTimeInCycle >= thisUser.break.freeDuration && onBreak === false){
+                        } else if (usedTime >= nextBreak && onBreak === false){
                             console.debug("-------Start Break Time---------")
                             thisUser.break.lastBreakTime = Date.now()
                             onBreak = true
@@ -211,12 +212,18 @@ mongoose.connect(url,{
                         thisUser.break.onBreak = onBreak
                         thisUser.save()
 
+                        console.info(responseJson)
+                        res.send(responseJson)
                     }).catch((err) => {
                         console.error(err)
+                        res.send(err)
                     })
 
                 } else {
                     console.info("No break configured")
+
+                    console.info(responseJson)
+                    res.send(responseJson)
                 }
 
             // User does not exist
@@ -224,10 +231,11 @@ mongoose.connect(url,{
                 // Or just send current time total
                 console.debug("Device is not associated with a user, sending time used")
                 responseJson.state = "time used"
+
+                console.info(responseJson)
+                res.send(responseJson)
             }
 
-            console.info(responseJson)
-            res.send(responseJson)
         }).catch(err =>{
             res.send(err)
         })
