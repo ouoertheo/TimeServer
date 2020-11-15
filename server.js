@@ -7,9 +7,7 @@ const cron = require('node-cron')
 const db = require('./config/db')
 
 // Express
-const express = require('express')
-const app = express()
-const bodyParser = require('body-parser')
+const app = require('./app')
 
 // Models
 const activity = require('./models/activity')
@@ -17,11 +15,8 @@ const day = require('./models/day')
 const session = require('./models/session')
 const user = require('./models/user')
 
-// Internal
-const config = require('./config')
-const service = require('./service')
-
-const url = config.mongo_url
+// Controller
+// const userController = require('./controller/user-controller');
 
 console.log('Connected to Database')
 try {
@@ -30,10 +25,6 @@ try {
     console.error(e);
 }
 
-
-
-app.use(bodyParser.urlencoded({extended:true}))
-app.use(bodyParser.json())
 
 // Clear daily limit at 9PM every night
 cron.schedule('0 21 * * *', function() {
@@ -66,7 +57,6 @@ app.get("/test",(req,res) => {
     res.send("Yep")
 })
 
-app.get
 
 app.post("/resetDailyStates",(req,res) => {
     user.updateMany({$set: {'break.lastFreeDuration': 0, 'break.lastBreakTime': 0, "break.onBreak": false,'bonusLimit':0}}, (err, docs) => {
@@ -355,23 +345,7 @@ app.post('/poll', (req,res) => {
 })
 
 
-// Create a user
-app.post('/user', (req,res) => {
-    let thisUser = new user({
-        name: req.body.name,
-        dailyLimit: req.body.dailyLimit,
-        bonusLimit: req.body.bonusLimit,
-        break: req.body.break,
-        devices: req.body.devices,
-        habiticaId: req.body.habiticaId       
-    })
-    
-    thisUser.save().then(doc => {
-        res.status(201).send(doc)
-    }).catch(err => {
-        res.status(500).send(err.message)
-    })
-})
+
 
 // Update a user
 app.patch('/user/:name', (req,res) =>{
