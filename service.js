@@ -1,5 +1,13 @@
 
 
+async function isOnBreak(start, end){
+    
+}
+
+
+
+
+
 // Did the user take a natural break? Aggregate the time between now and the [breakDuration] ago.
 function userTookNaturalBreak(userName, breakDuration) {    
     // Accept up to an extra 15% of the breakDuration if the user just checks something real quick
